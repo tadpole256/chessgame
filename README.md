@@ -33,7 +33,7 @@ python chess_game.py
 ```
 
 
-### How to Play
+# How to Play
 
     The game starts with the white pieces at the bottom and the black pieces at the top of the board.
     To make a move, enter the start and end positions in the format e2 e4. This will move the piece from the square e2 to the square e4.
@@ -41,7 +41,7 @@ python chess_game.py
     The game will display an error message if the move is invalid, prompting the player to try again.
     Type exit to quit the game.
 
-### Sample Gameplay
+## Sample Gameplay
 
 Welcome to Chess!
 To make a move, enter the start and end positions in the format 'e2 e4'.
