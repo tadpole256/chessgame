@@ -12,7 +12,7 @@ class Pawn(Piece):
     def is_valid_move(self, start, end, board):
         start_x, start_y = start
         end_x, end_y = end
-        direction = 1 if self.color == 'white' else -1
+        direction = -1 if self.color == 'white' else 1  # Corrected direction
 
         print(f"Validating Pawn move from {start} to {end}")
 
@@ -23,7 +23,7 @@ class Pawn(Piece):
         
         # Double step forward from starting position
         if start_x == end_x and end_y - start_y == 2 * direction and board[end_y][end_x] is None and board[start_y + direction][start_x] is None:
-            if (self.color == 'white' and start_y == 1) or (self.color == 'black' and start_y == 6):
+            if (self.color == 'white' and start_y == 6) or (self.color == 'black' and start_y == 1):  # Corrected starting positions
                 print("Valid double step forward")
                 return True
 
