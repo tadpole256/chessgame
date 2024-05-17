@@ -30,6 +30,7 @@ Welcome to the Chess Game project! This is a simple command-line chess game impl
 To start the game, run the following command:
 ```sh
 python chess_game.py
+   ```
 
 ## How to Play
 
