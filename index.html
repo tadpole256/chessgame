@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Regal Chess</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Manrope:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="ambient-shape ambient-one" aria-hidden="true"></div>
+    <div class="ambient-shape ambient-two" aria-hidden="true"></div>
+
+    <main class="app-shell">
+      <header class="hero">
+        <p class="eyebrow">Classic Rules. Modern Presentation.</p>
+        <h1>Regal Chess</h1>
+        <p>
+          Full chess rules with castling, en passant, promotion, checkmate, stalemate,
+          repetition, and 50-move draw detection.
+        </p>
+      </header>
+
+      <section class="game-layout">
+        <section class="board-panel" aria-label="Chess Board Panel">
+          <div class="board-frame">
+            <div id="board" class="board" role="grid" aria-label="Chess board"></div>
+          </div>
+
+          <div class="status-card">
+            <p id="status-line" class="status-line">White to move.</p>
+            <p id="meta-line" class="meta-line">Move 1</p>
+          </div>
+        </section>
+
+        <aside class="control-panel">
+          <section id="clock-stack" class="clock-stack">
+            <div id="clock-black" class="clock-card">
+              <p class="clock-label">Black</p>
+              <p id="time-black" class="clock-time">05:00</p>
+            </div>
+            <div id="clock-white" class="clock-card active">
+              <p class="clock-label">White</p>
+              <p id="time-white" class="clock-time">05:00</p>
+            </div>
+          </section>
+
+          <section class="controls-card">
+            <label for="time-control">Time Control</label>
+            <select id="time-control">
+              <option value="untimed">Untimed</option>
+              <option value="180+2">3 | 2</option>
+              <option value="300+0" selected>5 | 0</option>
+              <option value="600+5">10 | 5</option>
+              <option value="900+10">15 | 10</option>
+            </select>
+
+            <div class="button-row">
+              <button id="new-game" type="button">New Game</button>
+              <button id="undo" type="button">Undo</button>
+              <button id="flip" type="button">Flip Board</button>
+            </div>
+          </section>
+
+          <section class="captures-card">
+            <h2>Captured Pieces</h2>
+            <div class="capture-row">
+              <p>White captured</p>
+              <div id="captured-white" class="capture-list" aria-live="polite"></div>
+            </div>
+            <div class="capture-row">
+              <p>Black captured</p>
+              <div id="captured-black" class="capture-list" aria-live="polite"></div>
+            </div>
+          </section>
+
+          <section class="history-card">
+            <h2>Move History</h2>
+            <ol id="move-list"></ol>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <div id="promotion-modal" class="promotion-modal hidden" role="dialog" aria-modal="true" aria-label="Choose promotion piece">
+      <div class="promotion-content">
+        <h2>Choose Promotion</h2>
+        <div class="promotion-options">
+          <button type="button" data-piece="q"></button>
+          <button type="button" data-piece="r"></button>
+          <button type="button" data-piece="b"></button>
+          <button type="button" data-piece="n"></button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
