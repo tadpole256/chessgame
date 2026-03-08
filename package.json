@@ -1,0 +1,12 @@
+{
+  "name": "regal-chess",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Full featured browser chess with AI and websocket multiplayer.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

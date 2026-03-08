@@ -1,904 +1,335 @@
-const FILES = "abcdefgh";
+const { FILES, PIECE_SYMBOLS, PIECE_VALUES, ChessEngine } = window.ChessCore;
 
-const PIECE_SYMBOLS = {
-  w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
-  b: { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" },
+const AI_LEVELS = {
+  easy: { depth: 1, noise: 0.9 },
+  medium: { depth: 2, noise: 0.45 },
+  hard: { depth: 3, noise: 0.15 },
 };
 
-const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-
-function coordToAlgebraic(x, y) {
-  return `${FILES[x]}${8 - y}`;
+function randomInt(max) {
+  return Math.floor(Math.random() * max);
 }
 
-class ChessEngine {
-  constructor() {
-    this.reset();
+function randomRoomCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i += 1) {
+    code += alphabet[randomInt(alphabet.length)];
+  }
+  return code;
+}
+
+function sanitizeRoomCode(value) {
+  return (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+}
+
+class ChessAI {
+  getDifficultyConfig(level) {
+    return AI_LEVELS[level] || AI_LEVELS.medium;
   }
 
-  reset() {
-    this.board = this.createInitialBoard();
-    this.turn = "w";
-    this.castlingRights = {
-      w: { k: true, q: true },
-      b: { k: true, q: true },
-    };
-    this.enPassant = null;
-    this.halfmoveClock = 0;
-    this.fullmoveNumber = 1;
-    this.history = [];
-    this.capturedBy = { w: [], b: [] };
-    this.gameOver = false;
-    this.result = null;
-    this.positionCounts = new Map();
-    this.positionCounts.set(this.getPositionKey(), 1);
-  }
+  scoreMoveOrdering(engine, move) {
+    const mover = engine.getPiece(move.fromX, move.fromY);
+    const target = move.isEnPassant
+      ? { type: "p" }
+      : engine.getPiece(move.toX, move.toY);
 
-  createInitialBoard() {
-    const board = Array.from({ length: 8 }, () => Array(8).fill(null));
-    const backRank = ["r", "n", "b", "q", "k", "b", "n", "r"];
+    let score = 0;
 
-    for (let x = 0; x < 8; x += 1) {
-      board[0][x] = { color: "b", type: backRank[x], moved: false };
-      board[1][x] = { color: "b", type: "p", moved: false };
-      board[6][x] = { color: "w", type: "p", moved: false };
-      board[7][x] = { color: "w", type: backRank[x], moved: false };
+    if (move.isCapture) {
+      const capturedValue = target ? PIECE_VALUES[target.type] : 1;
+      const moverValue = mover ? PIECE_VALUES[mover.type] : 1;
+      score += capturedValue * 10 - moverValue;
     }
 
-    return board;
-  }
-
-  cloneBoard(board = this.board) {
-    return board.map((row) => row.map((piece) => (piece ? { ...piece } : null)));
-  }
-
-  cloneCastlingRights(rights = this.castlingRights) {
-    return {
-      w: { ...rights.w },
-      b: { ...rights.b },
-    };
-  }
-
-  cloneCapturedBy(capturedBy = this.capturedBy) {
-    return {
-      w: capturedBy.w.map((piece) => ({ ...piece })),
-      b: capturedBy.b.map((piece) => ({ ...piece })),
-    };
-  }
-
-  captureSnapshot() {
-    return {
-      board: this.cloneBoard(),
-      turn: this.turn,
-      castlingRights: this.cloneCastlingRights(),
-      enPassant: this.enPassant ? { ...this.enPassant } : null,
-      halfmoveClock: this.halfmoveClock,
-      fullmoveNumber: this.fullmoveNumber,
-      capturedBy: this.cloneCapturedBy(),
-      gameOver: this.gameOver,
-      result: this.result ? { ...this.result } : null,
-      positionCounts: new Map(this.positionCounts),
-    };
-  }
-
-  restoreSnapshot(snapshot) {
-    this.board = this.cloneBoard(snapshot.board);
-    this.turn = snapshot.turn;
-    this.castlingRights = this.cloneCastlingRights(snapshot.castlingRights);
-    this.enPassant = snapshot.enPassant ? { ...snapshot.enPassant } : null;
-    this.halfmoveClock = snapshot.halfmoveClock;
-    this.fullmoveNumber = snapshot.fullmoveNumber;
-    this.capturedBy = this.cloneCapturedBy(snapshot.capturedBy);
-    this.gameOver = snapshot.gameOver;
-    this.result = snapshot.result ? { ...snapshot.result } : null;
-    this.positionCounts = new Map(snapshot.positionCounts);
-  }
-
-  inBounds(x, y) {
-    return x >= 0 && x < 8 && y >= 0 && y < 8;
-  }
-
-  getPiece(x, y) {
-    if (!this.inBounds(x, y)) {
-      return null;
-    }
-    return this.board[y][x];
-  }
-
-  getPositionKey() {
-    const rows = [];
-
-    for (let y = 0; y < 8; y += 1) {
-      let row = "";
-      for (let x = 0; x < 8; x += 1) {
-        const piece = this.board[y][x];
-        if (!piece) {
-          row += ".";
-        } else {
-          const symbol = piece.color === "w" ? piece.type.toUpperCase() : piece.type;
-          row += symbol;
-        }
-      }
-      rows.push(row);
+    if (move.promotionType) {
+      score += PIECE_VALUES[move.promotionType] + 8;
     }
 
-    const castle = [
-      this.castlingRights.w.k ? "K" : "",
-      this.castlingRights.w.q ? "Q" : "",
-      this.castlingRights.b.k ? "k" : "",
-      this.castlingRights.b.q ? "q" : "",
-    ]
-      .join("")
-      .trim() || "-";
+    if (move.isCastle) {
+      score += 1.4;
+    }
 
-    const enPassantKey = this.enPassant
-      ? coordToAlgebraic(this.enPassant.x, this.enPassant.y)
-      : "-";
-
-    return `${rows.join("/")}:${this.turn}:${castle}:${enPassantKey}`;
+    return score;
   }
 
-  findKing(color, board = this.board) {
-    for (let y = 0; y < 8; y += 1) {
-      for (let x = 0; x < 8; x += 1) {
-        const piece = board[y][x];
-        if (piece && piece.color === color && piece.type === "k") {
-          return { x, y };
-        }
-      }
-    }
-    return null;
+  orderMoves(engine, moves) {
+    return [...moves].sort(
+      (a, b) => this.scoreMoveOrdering(engine, b) - this.scoreMoveOrdering(engine, a),
+    );
   }
 
-  isSquareAttacked(x, y, byColor, board = this.board) {
-    const pawnDir = byColor === "w" ? -1 : 1;
-    const pawnSources = [
-      [x - 1, y - pawnDir],
-      [x + 1, y - pawnDir],
-    ];
-
-    for (const [sx, sy] of pawnSources) {
-      if (!this.inBounds(sx, sy)) {
-        continue;
-      }
-      const piece = board[sy][sx];
-      if (piece && piece.color === byColor && piece.type === "p") {
-        return true;
-      }
-    }
-
-    const knightOffsets = [
-      [1, 2],
-      [2, 1],
-      [2, -1],
-      [1, -2],
-      [-1, -2],
-      [-2, -1],
-      [-2, 1],
-      [-1, 2],
-    ];
-
-    for (const [dx, dy] of knightOffsets) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!this.inBounds(nx, ny)) {
-        continue;
-      }
-      const piece = board[ny][nx];
-      if (piece && piece.color === byColor && piece.type === "n") {
-        return true;
-      }
-    }
-
-    const diagonalDirs = [
-      [1, 1],
-      [1, -1],
-      [-1, 1],
-      [-1, -1],
-    ];
-
-    for (const [dx, dy] of diagonalDirs) {
-      let nx = x + dx;
-      let ny = y + dy;
-      while (this.inBounds(nx, ny)) {
-        const piece = board[ny][nx];
-        if (piece) {
-          if (piece.color === byColor && (piece.type === "b" || piece.type === "q")) {
-            return true;
-          }
-          break;
-        }
-        nx += dx;
-        ny += dy;
-      }
-    }
-
-    const straightDirs = [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ];
-
-    for (const [dx, dy] of straightDirs) {
-      let nx = x + dx;
-      let ny = y + dy;
-      while (this.inBounds(nx, ny)) {
-        const piece = board[ny][nx];
-        if (piece) {
-          if (piece.color === byColor && (piece.type === "r" || piece.type === "q")) {
-            return true;
-          }
-          break;
-        }
-        nx += dx;
-        ny += dy;
-      }
-    }
-
-    for (let dy = -1; dy <= 1; dy += 1) {
-      for (let dx = -1; dx <= 1; dx += 1) {
-        if (dx === 0 && dy === 0) {
-          continue;
-        }
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) {
-          continue;
-        }
-        const piece = board[ny][nx];
-        if (piece && piece.color === byColor && piece.type === "k") {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
-  isKingInCheck(color, board = this.board) {
-    const king = this.findKing(color, board);
-    if (!king) {
-      return false;
-    }
-    const attacker = color === "w" ? "b" : "w";
-    return this.isSquareAttacked(king.x, king.y, attacker, board);
-  }
-
-  addPromotionMoves(baseMove, moves) {
-    const promotionPieces = ["q", "r", "b", "n"];
-    for (const promotionType of promotionPieces) {
-      moves.push({ ...baseMove, promotionType });
-    }
-  }
-
-  getPseudoMovesForPiece(x, y) {
-    const piece = this.getPiece(x, y);
-    if (!piece) {
-      return [];
-    }
-
-    const color = piece.color;
-    const enemy = color === "w" ? "b" : "w";
-    const moves = [];
+  pieceSquareBonus(piece, x, y, endgame) {
+    const rank = piece.color === "w" ? 7 - y : y;
+    const centerDistance = Math.abs(3.5 - x) + Math.abs(3.5 - y);
 
     if (piece.type === "p") {
-      const dir = color === "w" ? -1 : 1;
-      const startRank = color === "w" ? 6 : 1;
-      const promotionRank = color === "w" ? 0 : 7;
-
-      const oneForwardY = y + dir;
-      if (this.inBounds(x, oneForwardY) && !this.getPiece(x, oneForwardY)) {
-        const move = {
-          fromX: x,
-          fromY: y,
-          toX: x,
-          toY: oneForwardY,
-          isCapture: false,
-        };
-        if (oneForwardY === promotionRank) {
-          this.addPromotionMoves(move, moves);
-        } else {
-          moves.push(move);
-        }
-
-        const twoForwardY = y + 2 * dir;
-        if (y === startRank && !this.getPiece(x, twoForwardY)) {
-          moves.push({
-            fromX: x,
-            fromY: y,
-            toX: x,
-            toY: twoForwardY,
-            isCapture: false,
-            isDoublePawnPush: true,
-          });
-        }
-      }
-
-      for (const dx of [-1, 1]) {
-        const nx = x + dx;
-        const ny = y + dir;
-        if (!this.inBounds(nx, ny)) {
-          continue;
-        }
-
-        const target = this.getPiece(nx, ny);
-        if (target && target.color === enemy) {
-          const move = {
-            fromX: x,
-            fromY: y,
-            toX: nx,
-            toY: ny,
-            isCapture: true,
-          };
-          if (ny === promotionRank) {
-            this.addPromotionMoves(move, moves);
-          } else {
-            moves.push(move);
-          }
-        }
-
-        if (this.enPassant && this.enPassant.x === nx && this.enPassant.y === ny) {
-          const captureY = ny - dir;
-          const enPassantTarget = this.getPiece(nx, captureY);
-          if (
-            enPassantTarget &&
-            enPassantTarget.type === "p" &&
-            enPassantTarget.color === enemy
-          ) {
-            moves.push({
-              fromX: x,
-              fromY: y,
-              toX: nx,
-              toY: ny,
-              isCapture: true,
-              isEnPassant: true,
-              captureX: nx,
-              captureY,
-            });
-          }
-        }
-      }
+      return rank * 0.08 - centerDistance * 0.02;
     }
 
     if (piece.type === "n") {
-      const offsets = [
-        [1, 2],
-        [2, 1],
-        [2, -1],
-        [1, -2],
-        [-1, -2],
-        [-2, -1],
-        [-2, 1],
-        [-1, 2],
-      ];
-      for (const [dx, dy] of offsets) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!this.inBounds(nx, ny)) {
-          continue;
-        }
-        const target = this.getPiece(nx, ny);
-        if (!target || target.color !== color) {
-          moves.push({
-            fromX: x,
-            fromY: y,
-            toX: nx,
-            toY: ny,
-            isCapture: Boolean(target),
-          });
-        }
-      }
+      return 0.45 - centerDistance * 0.1;
     }
 
-    const addSlidingMoves = (directions) => {
-      for (const [dx, dy] of directions) {
-        let nx = x + dx;
-        let ny = y + dy;
-        while (this.inBounds(nx, ny)) {
-          const target = this.getPiece(nx, ny);
-          if (!target) {
-            moves.push({
-              fromX: x,
-              fromY: y,
-              toX: nx,
-              toY: ny,
-              isCapture: false,
-            });
-          } else {
-            if (target.color !== color) {
-              moves.push({
-                fromX: x,
-                fromY: y,
-                toX: nx,
-                toY: ny,
-                isCapture: true,
-              });
-            }
-            break;
-          }
-          nx += dx;
-          ny += dy;
-        }
-      }
-    };
-
     if (piece.type === "b") {
-      addSlidingMoves([
-        [1, 1],
-        [1, -1],
-        [-1, 1],
-        [-1, -1],
-      ]);
+      return 0.3 - centerDistance * 0.06;
     }
 
     if (piece.type === "r") {
-      addSlidingMoves([
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ]);
+      return rank * 0.03;
     }
 
     if (piece.type === "q") {
-      addSlidingMoves([
-        [1, 1],
-        [1, -1],
-        [-1, 1],
-        [-1, -1],
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ]);
+      return 0.18 - centerDistance * 0.03;
     }
 
     if (piece.type === "k") {
-      for (let dy = -1; dy <= 1; dy += 1) {
-        for (let dx = -1; dx <= 1; dx += 1) {
-          if (dx === 0 && dy === 0) {
-            continue;
-          }
-          const nx = x + dx;
-          const ny = y + dy;
-          if (!this.inBounds(nx, ny)) {
-            continue;
-          }
-          const target = this.getPiece(nx, ny);
-          if (!target || target.color !== color) {
-            moves.push({
-              fromX: x,
-              fromY: y,
-              toX: nx,
-              toY: ny,
-              isCapture: Boolean(target),
-            });
-          }
-        }
+      if (endgame) {
+        return 0.45 - centerDistance * 0.09;
       }
-
-      if (!piece.moved && !this.isKingInCheck(color)) {
-        const rank = color === "w" ? 7 : 0;
-        const rights = this.castlingRights[color];
-        const opponent = color === "w" ? "b" : "w";
-
-        if (
-          rights.k &&
-          !this.getPiece(5, rank) &&
-          !this.getPiece(6, rank) &&
-          !this.isSquareAttacked(5, rank, opponent) &&
-          !this.isSquareAttacked(6, rank, opponent)
-        ) {
-          const rook = this.getPiece(7, rank);
-          if (rook && rook.type === "r" && rook.color === color && !rook.moved) {
-            moves.push({
-              fromX: 4,
-              fromY: rank,
-              toX: 6,
-              toY: rank,
-              isCapture: false,
-              isCastle: "k",
-            });
-          }
-        }
-
-        if (
-          rights.q &&
-          !this.getPiece(1, rank) &&
-          !this.getPiece(2, rank) &&
-          !this.getPiece(3, rank) &&
-          !this.isSquareAttacked(3, rank, opponent) &&
-          !this.isSquareAttacked(2, rank, opponent)
-        ) {
-          const rook = this.getPiece(0, rank);
-          if (rook && rook.type === "r" && rook.color === color && !rook.moved) {
-            moves.push({
-              fromX: 4,
-              fromY: rank,
-              toX: 2,
-              toY: rank,
-              isCapture: false,
-              isCastle: "q",
-            });
-          }
-        }
-      }
+      return centerDistance * -0.04;
     }
 
-    return moves;
+    return 0;
   }
 
-  wouldLeaveKingInCheck(move, color) {
-    const simulation = this.cloneBoard();
-    const movingPiece = simulation[move.fromY][move.fromX];
-    if (!movingPiece) {
-      return true;
-    }
-
-    simulation[move.fromY][move.fromX] = null;
-
-    if (move.isEnPassant) {
-      simulation[move.captureY][move.captureX] = null;
-    }
-
-    if (move.isCastle) {
-      const rank = color === "w" ? 7 : 0;
-      if (move.isCastle === "k") {
-        const rook = simulation[rank][7];
-        simulation[rank][7] = null;
-        simulation[rank][5] = rook ? { ...rook, moved: true } : null;
-      } else {
-        const rook = simulation[rank][0];
-        simulation[rank][0] = null;
-        simulation[rank][3] = rook ? { ...rook, moved: true } : null;
+  evaluatePosition(engine, aiColor) {
+    if (engine.gameOver && engine.result) {
+      if (engine.result.type === "checkmate") {
+        return engine.result.winner === aiColor ? 100000 : -100000;
       }
+      if (engine.result.type === "timeout") {
+        return engine.result.winner === aiColor ? 100000 : -100000;
+      }
+      return 0;
     }
 
-    const placed = { ...movingPiece, moved: true };
-    if (move.promotionType) {
-      placed.type = move.promotionType;
-    }
-
-    simulation[move.toY][move.toX] = placed;
-    return this.isKingInCheck(color, simulation);
-  }
-
-  getLegalMovesForPiece(x, y, color = this.turn) {
-    const piece = this.getPiece(x, y);
-    if (!piece || piece.color !== color) {
-      return [];
-    }
-
-    const pseudoMoves = this.getPseudoMovesForPiece(x, y);
-    return pseudoMoves.filter((move) => !this.wouldLeaveKingInCheck(move, color));
-  }
-
-  getAllLegalMoves(color = this.turn) {
-    const legalMoves = [];
-
+    let totalMaterial = 0;
     for (let y = 0; y < 8; y += 1) {
       for (let x = 0; x < 8; x += 1) {
-        const piece = this.getPiece(x, y);
-        if (!piece || piece.color !== color) {
-          continue;
-        }
-        const pieceMoves = this.getLegalMovesForPiece(x, y, color);
-        legalMoves.push(...pieceMoves);
-      }
-    }
-
-    return legalMoves;
-  }
-
-  updateCastlingRights(piece, move, captured) {
-    const color = piece.color;
-
-    if (piece.type === "k") {
-      this.castlingRights[color].k = false;
-      this.castlingRights[color].q = false;
-    }
-
-    if (piece.type === "r") {
-      const homeRank = color === "w" ? 7 : 0;
-      if (move.fromY === homeRank && move.fromX === 0) {
-        this.castlingRights[color].q = false;
-      }
-      if (move.fromY === homeRank && move.fromX === 7) {
-        this.castlingRights[color].k = false;
-      }
-    }
-
-    if (captured && captured.type === "r") {
-      const capturedHomeRank = captured.color === "w" ? 7 : 0;
-      if (move.toY === capturedHomeRank && move.toX === 0) {
-        this.castlingRights[captured.color].q = false;
-      }
-      if (move.toY === capturedHomeRank && move.toX === 7) {
-        this.castlingRights[captured.color].k = false;
-      }
-    }
-  }
-
-  createNotation(move, piece, captured) {
-    if (move.isCastle === "k") {
-      return this.appendCheckState("O-O");
-    }
-
-    if (move.isCastle === "q") {
-      return this.appendCheckState("O-O-O");
-    }
-
-    const from = coordToAlgebraic(move.fromX, move.fromY);
-    const to = coordToAlgebraic(move.toX, move.toY);
-    const captureMark = captured || move.isEnPassant ? "x" : "-";
-
-    let notation = `${from}${captureMark}${to}`;
-
-    if (move.promotionType) {
-      notation += `=${move.promotionType.toUpperCase()}`;
-    }
-
-    return this.appendCheckState(notation);
-  }
-
-  appendCheckState(baseNotation) {
-    if (this.gameOver && this.result && this.result.type === "checkmate") {
-      return `${baseNotation}#`;
-    }
-
-    if (!this.gameOver && this.isKingInCheck(this.turn)) {
-      return `${baseNotation}+`;
-    }
-
-    return baseNotation;
-  }
-
-  applyMove(move) {
-    if (this.gameOver) {
-      return { ok: false, reason: "game_over" };
-    }
-
-    const snapshotBefore = this.captureSnapshot();
-    const piece = this.getPiece(move.fromX, move.fromY);
-
-    if (!piece || piece.color !== this.turn) {
-      return { ok: false, reason: "invalid_piece" };
-    }
-
-    let captured = null;
-
-    if (move.isEnPassant) {
-      captured = this.getPiece(move.captureX, move.captureY);
-      this.board[move.captureY][move.captureX] = null;
-    } else {
-      captured = this.getPiece(move.toX, move.toY);
-    }
-
-    this.board[move.fromY][move.fromX] = null;
-
-    const movedPiece = { ...piece, moved: true };
-    if (move.promotionType) {
-      movedPiece.type = move.promotionType;
-    }
-
-    this.board[move.toY][move.toX] = movedPiece;
-
-    if (move.isCastle) {
-      const rank = piece.color === "w" ? 7 : 0;
-      if (move.isCastle === "k") {
-        const rook = this.board[rank][7];
-        this.board[rank][7] = null;
-        this.board[rank][5] = rook ? { ...rook, moved: true } : null;
-      } else {
-        const rook = this.board[rank][0];
-        this.board[rank][0] = null;
-        this.board[rank][3] = rook ? { ...rook, moved: true } : null;
-      }
-    }
-
-    const capturedInfo = captured ? { type: captured.type, color: captured.color } : null;
-    if (capturedInfo) {
-      this.capturedBy[piece.color].push(capturedInfo);
-    }
-
-    this.updateCastlingRights(piece, move, capturedInfo);
-
-    if (piece.type === "p" && Math.abs(move.toY - move.fromY) === 2) {
-      this.enPassant = {
-        x: move.fromX,
-        y: (move.fromY + move.toY) / 2,
-      };
-    } else {
-      this.enPassant = null;
-    }
-
-    if (piece.type === "p" || capturedInfo) {
-      this.halfmoveClock = 0;
-    } else {
-      this.halfmoveClock += 1;
-    }
-
-    if (this.turn === "b") {
-      this.fullmoveNumber += 1;
-    }
-
-    this.turn = this.turn === "w" ? "b" : "w";
-
-    const positionKey = this.getPositionKey();
-    const count = (this.positionCounts.get(positionKey) || 0) + 1;
-    this.positionCounts.set(positionKey, count);
-
-    this.evaluateGameState();
-
-    const notation = this.createNotation(move, piece, capturedInfo);
-
-    const historyEntry = {
-      move: { ...move },
-      notation,
-      mover: piece.color,
-      captured: capturedInfo,
-      snapshotBefore,
-    };
-
-    this.history.push(historyEntry);
-
-    return {
-      ok: true,
-      move: historyEntry,
-    };
-  }
-
-  attemptMove(fromX, fromY, toX, toY, promotionType = null) {
-    if (this.gameOver) {
-      return { ok: false, reason: "game_over" };
-    }
-
-    const legalMoves = this.getLegalMovesForPiece(fromX, fromY, this.turn);
-    const candidates = legalMoves.filter((move) => move.toX === toX && move.toY === toY);
-
-    if (!candidates.length) {
-      return { ok: false, reason: "illegal_move" };
-    }
-
-    const needsPromotion = candidates.some((move) => Boolean(move.promotionType));
-    if (needsPromotion && !promotionType) {
-      return { ok: false, needsPromotion: true };
-    }
-
-    let selected = candidates[0];
-    if (promotionType) {
-      const match = candidates.find((move) => move.promotionType === promotionType);
-      if (!match) {
-        return { ok: false, reason: "invalid_promotion" };
-      }
-      selected = match;
-    }
-
-    return this.applyMove(selected);
-  }
-
-  evaluateGameState() {
-    const legalMoves = this.getAllLegalMoves(this.turn);
-    const inCheck = this.isKingInCheck(this.turn);
-
-    this.gameOver = false;
-    this.result = null;
-
-    if (legalMoves.length === 0) {
-      if (inCheck) {
-        this.gameOver = true;
-        this.result = {
-          type: "checkmate",
-          winner: this.turn === "w" ? "b" : "w",
-          reason: "Checkmate",
-        };
-      } else {
-        this.gameOver = true;
-        this.result = {
-          type: "draw",
-          reason: "Stalemate",
-        };
-      }
-      return;
-    }
-
-    if (this.halfmoveClock >= 100) {
-      this.gameOver = true;
-      this.result = {
-        type: "draw",
-        reason: "50-move rule",
-      };
-      return;
-    }
-
-    const key = this.getPositionKey();
-    if ((this.positionCounts.get(key) || 0) >= 3) {
-      this.gameOver = true;
-      this.result = {
-        type: "draw",
-        reason: "Threefold repetition",
-      };
-      return;
-    }
-
-    if (this.isInsufficientMaterial()) {
-      this.gameOver = true;
-      this.result = {
-        type: "draw",
-        reason: "Insufficient material",
-      };
-    }
-  }
-
-  isInsufficientMaterial() {
-    const pieces = [];
-
-    for (let y = 0; y < 8; y += 1) {
-      for (let x = 0; x < 8; x += 1) {
-        const piece = this.getPiece(x, y);
+        const piece = engine.getPiece(x, y);
         if (!piece || piece.type === "k") {
           continue;
         }
-        pieces.push({
-          type: piece.type,
-          color: piece.color,
-          squareColor: (x + y) % 2,
-        });
+        totalMaterial += PIECE_VALUES[piece.type];
       }
     }
 
-    if (pieces.some((piece) => ["p", "r", "q"].includes(piece.type))) {
-      return false;
-    }
+    const endgame = totalMaterial <= 14;
+    let score = 0;
 
-    if (pieces.length === 0) {
-      return true;
-    }
-
-    if (pieces.length === 1 && ["b", "n"].includes(pieces[0].type)) {
-      return true;
-    }
-
-    if (pieces.length === 2) {
-      const [a, b] = pieces;
-      if (a.type === "n" && b.type === "n") {
-        return true;
-      }
-
-      if (a.type === "b" && b.type === "b") {
-        if (a.color !== b.color) {
-          return true;
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        const piece = engine.getPiece(x, y);
+        if (!piece) {
+          continue;
         }
-        return a.squareColor === b.squareColor;
+
+        const multiplier = piece.color === aiColor ? 1 : -1;
+        const material = PIECE_VALUES[piece.type];
+        const placement = this.pieceSquareBonus(piece, x, y, endgame);
+        score += multiplier * (material + placement);
       }
     }
 
-    if (pieces.every((piece) => piece.type === "b")) {
-      const sameColorSquares = pieces.every(
-        (piece) => piece.squareColor === pieces[0].squareColor,
+    const aiMoves = engine.getAllLegalMoves(aiColor).length;
+    const oppColor = aiColor === "w" ? "b" : "w";
+    const oppMoves = engine.getAllLegalMoves(oppColor).length;
+    score += (aiMoves - oppMoves) * 0.04;
+
+    if (engine.isKingInCheck(aiColor)) {
+      score -= 0.25;
+    }
+    if (engine.isKingInCheck(oppColor)) {
+      score += 0.25;
+    }
+
+    return score;
+  }
+
+  search(engine, depth, alpha, beta, aiColor) {
+    if (depth <= 0 || engine.gameOver) {
+      return this.evaluatePosition(engine, aiColor);
+    }
+
+    const currentColor = engine.turn;
+    const moves = this.orderMoves(engine, engine.getAllLegalMoves(currentColor));
+
+    if (!moves.length) {
+      return this.evaluatePosition(engine, aiColor);
+    }
+
+    if (currentColor === aiColor) {
+      let value = Number.NEGATIVE_INFINITY;
+
+      for (const move of moves) {
+        const result = engine.applyMove(move);
+        if (!result.ok) {
+          continue;
+        }
+
+        const next = this.search(engine, depth - 1, alpha, beta, aiColor);
+        engine.undo();
+
+        if (next > value) {
+          value = next;
+        }
+        if (value > alpha) {
+          alpha = value;
+        }
+        if (beta <= alpha) {
+          break;
+        }
+      }
+
+      return value;
+    }
+
+    let value = Number.POSITIVE_INFINITY;
+
+    for (const move of moves) {
+      const result = engine.applyMove(move);
+      if (!result.ok) {
+        continue;
+      }
+
+      const next = this.search(engine, depth - 1, alpha, beta, aiColor);
+      engine.undo();
+
+      if (next < value) {
+        value = next;
+      }
+      if (value < beta) {
+        beta = value;
+      }
+      if (beta <= alpha) {
+        break;
+      }
+    }
+
+    return value;
+  }
+
+  chooseMove(engine, level, aiColor) {
+    const config = this.getDifficultyConfig(level);
+    const moves = this.orderMoves(engine, engine.getAllLegalMoves(aiColor));
+
+    if (!moves.length) {
+      return null;
+    }
+
+    let bestScore = Number.NEGATIVE_INFINITY;
+    const scoredMoves = [];
+
+    for (const move of moves) {
+      const result = engine.applyMove(move);
+      if (!result.ok) {
+        continue;
+      }
+
+      const score = this.search(
+        engine,
+        Math.max(0, config.depth - 1),
+        Number.NEGATIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+        aiColor,
       );
-      if (sameColorSquares) {
-        return true;
+
+      engine.undo();
+
+      scoredMoves.push({ move, score });
+      if (score > bestScore) {
+        bestScore = score;
       }
     }
 
-    return false;
+    const tolerance = config.noise;
+    const nearBest = scoredMoves.filter((entry) => entry.score >= bestScore - tolerance);
+    const pool = nearBest.length ? nearBest : scoredMoves;
+    const chosen = pool[randomInt(pool.length)];
+
+    return chosen ? { ...chosen.move } : null;
+  }
+}
+
+class OnlineClient {
+  constructor(onEvent) {
+    this.onEvent = onEvent;
+    this.socket = null;
+    this.connected = false;
   }
 
-  setResult(result) {
-    this.gameOver = true;
-    this.result = { ...result };
+  emit(event) {
+    if (this.onEvent) {
+      this.onEvent(event);
+    }
   }
 
-  undo() {
-    if (!this.history.length) {
-      return { ok: false };
+  connect(roomId, preferredColor) {
+    this.disconnect(false);
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${protocol}//${window.location.host}/ws`;
+
+    this.socket = new WebSocket(url);
+
+    this.socket.addEventListener("open", () => {
+      this.connected = true;
+      this.emit({ type: "socket_open" });
+      this.send({ type: "join", roomId, preferredColor });
+    });
+
+    this.socket.addEventListener("message", (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        this.emit(payload);
+      } catch (error) {
+        this.emit({ type: "error", message: "Invalid server response." });
+      }
+    });
+
+    this.socket.addEventListener("error", () => {
+      this.emit({ type: "socket_error" });
+    });
+
+    this.socket.addEventListener("close", (event) => {
+      const wasConnected = this.connected;
+      this.connected = false;
+      this.socket = null;
+      this.emit({ type: "socket_close", wasConnected, reason: event.reason || "" });
+    });
+  }
+
+  send(payload) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    this.socket.send(JSON.stringify(payload));
+  }
+
+  disconnect(emitEvent = true) {
+    if (!this.socket) {
+      if (emitEvent) {
+        this.emit({ type: "socket_close", wasConnected: false, reason: "" });
+      }
+      return;
     }
 
-    const last = this.history.pop();
-    this.restoreSnapshot(last.snapshotBefore);
-    return { ok: true, undone: last };
+    const socket = this.socket;
+    this.socket = null;
+
+    if (
+      socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING
+    ) {
+      socket.close(1000, "client_disconnect");
+    }
+
+    this.connected = false;
+
+    if (emitEvent) {
+      this.emit({ type: "socket_close", wasConnected: true, reason: "" });
+    }
   }
 }
 
@@ -910,27 +341,63 @@ class ChessApp {
     this.moveList = document.getElementById("move-list");
     this.capturedWhite = document.getElementById("captured-white");
     this.capturedBlack = document.getElementById("captured-black");
+
+    this.gameModeSelect = document.getElementById("game-mode");
+    this.timeControlWrap = document.getElementById("time-control-wrap");
     this.timeControlSelect = document.getElementById("time-control");
+
+    this.aiControls = document.getElementById("ai-controls");
+    this.aiDifficultySelect = document.getElementById("ai-difficulty");
+    this.humanColorSelect = document.getElementById("human-color");
+
+    this.onlineControls = document.getElementById("online-controls");
+    this.onlineRoomInput = document.getElementById("online-room");
+    this.onlineColorSelect = document.getElementById("online-color");
+    this.onlineConnectButton = document.getElementById("online-connect");
+    this.onlineDisconnectButton = document.getElementById("online-disconnect");
+    this.onlineStatusLine = document.getElementById("online-status");
+
     this.newGameButton = document.getElementById("new-game");
     this.undoButton = document.getElementById("undo");
     this.flipButton = document.getElementById("flip");
+
     this.clockStack = document.getElementById("clock-stack");
     this.clockWhite = document.getElementById("clock-white");
     this.clockBlack = document.getElementById("clock-black");
     this.timeWhite = document.getElementById("time-white");
     this.timeBlack = document.getElementById("time-black");
+
     this.promotionModal = document.getElementById("promotion-modal");
     this.promotionButtons = Array.from(
       this.promotionModal.querySelectorAll("button[data-piece]"),
     );
 
     this.engine = new ChessEngine();
+    this.ai = new ChessAI();
+    this.onlineClient = new OnlineClient((event) => this.handleOnlineEvent(event));
+
+    this.mode = this.gameModeSelect.value;
+    this.humanColor = "w";
+    this.aiColor = "b";
 
     this.orientation = "w";
     this.selected = null;
     this.legalMoves = [];
     this.lastMove = null;
     this.pendingPromotion = null;
+
+    this.aiThinking = false;
+    this.aiTimer = null;
+
+    this.online = {
+      joining: false,
+      connected: false,
+      roomId: "",
+      role: "offline",
+      color: null,
+      pendingMove: false,
+      players: { w: false, b: false },
+    };
 
     this.clockConfig = {
       enabled: true,
@@ -945,8 +412,11 @@ class ChessApp {
 
     this.buildBoard();
     this.bindEvents();
+    this.configureAiSides();
     this.applyTimeControl();
+    this.syncModeUI();
     this.renderAll();
+    this.maybeQueueAIMove();
 
     this.clockInterval = window.setInterval(() => {
       this.handleClockTick();
@@ -973,6 +443,28 @@ class ChessApp {
   }
 
   bindEvents() {
+    this.gameModeSelect.addEventListener("change", () => {
+      this.onModeChange();
+    });
+
+    this.aiDifficultySelect.addEventListener("change", () => {
+      if (this.mode === "ai") {
+        this.startNewGame();
+      }
+    });
+
+    this.humanColorSelect.addEventListener("change", () => {
+      if (this.mode === "ai") {
+        this.startNewGame();
+      }
+    });
+
+    this.timeControlSelect.addEventListener("change", () => {
+      if (this.mode !== "online") {
+        this.startNewGame();
+      }
+    });
+
     this.newGameButton.addEventListener("click", () => {
       this.startNewGame();
     });
@@ -986,8 +478,16 @@ class ChessApp {
       this.renderBoard();
     });
 
-    this.timeControlSelect.addEventListener("change", () => {
-      this.startNewGame();
+    this.onlineConnectButton.addEventListener("click", () => {
+      this.connectOnline();
+    });
+
+    this.onlineDisconnectButton.addEventListener("click", () => {
+      this.disconnectOnline();
+    });
+
+    this.onlineRoomInput.addEventListener("input", () => {
+      this.onlineRoomInput.value = sanitizeRoomCode(this.onlineRoomInput.value);
     });
 
     this.promotionModal.addEventListener("click", (event) => {
@@ -1004,6 +504,46 @@ class ChessApp {
       }
       this.onPromotionChoice(promotionPiece);
     });
+  }
+
+  onModeChange() {
+    this.mode = this.gameModeSelect.value;
+
+    this.cancelAITurn();
+    this.pendingPromotion = null;
+    this.closePromotionModal();
+    this.clearSelection();
+
+    if (this.mode !== "online") {
+      if (this.online.connected || this.online.joining) {
+        this.onlineClient.disconnect(false);
+      }
+      this.online = {
+        joining: false,
+        connected: false,
+        roomId: "",
+        role: "offline",
+        color: null,
+        pendingMove: false,
+        players: { w: false, b: false },
+      };
+      this.setOnlineStatus("Not connected.", false);
+    }
+
+    this.startNewGame();
+    this.syncModeUI();
+  }
+
+  configureAiSides() {
+    const preference = this.humanColorSelect.value;
+
+    if (preference === "random") {
+      this.humanColor = Math.random() < 0.5 ? "w" : "b";
+    } else {
+      this.humanColor = preference === "b" ? "b" : "w";
+    }
+
+    this.aiColor = this.humanColor === "w" ? "b" : "w";
   }
 
   parseTimeControl(value) {
@@ -1024,8 +564,17 @@ class ChessApp {
   }
 
   applyTimeControl() {
-    this.clockConfig = this.parseTimeControl(this.timeControlSelect.value);
     this.clockHistory = [];
+
+    if (this.mode === "online") {
+      this.clockConfig = { enabled: false, baseSeconds: 0, increment: 0 };
+      this.clocks = { w: 0, b: 0 };
+      this.clockStack.classList.add("hidden");
+      this.lastTick = performance.now();
+      return;
+    }
+
+    this.clockConfig = this.parseTimeControl(this.timeControlSelect.value);
 
     if (this.clockConfig.enabled) {
       this.clocks = {
@@ -1041,45 +590,189 @@ class ChessApp {
     this.lastTick = performance.now();
   }
 
+  syncModeUI() {
+    const aiMode = this.mode === "ai";
+    const onlineMode = this.mode === "online";
+
+    this.aiControls.classList.toggle("hidden", !aiMode);
+    this.onlineControls.classList.toggle("hidden", !onlineMode);
+
+    this.undoButton.disabled = onlineMode;
+    this.timeControlWrap.classList.toggle("disabled", onlineMode);
+    this.timeControlSelect.disabled = onlineMode;
+
+    if (onlineMode && this.online.connected) {
+      this.newGameButton.textContent = "Request New Game";
+    } else {
+      this.newGameButton.textContent = "New Game";
+    }
+
+    this.onlineConnectButton.disabled = !onlineMode || this.online.joining || this.online.connected;
+    this.onlineDisconnectButton.disabled = !onlineMode || (!this.online.joining && !this.online.connected);
+
+    if (onlineMode && !this.online.connected && !this.online.joining) {
+      this.setOnlineStatus("Not connected.", false);
+    }
+  }
+
   startNewGame() {
+    this.cancelAITurn();
+    this.pendingPromotion = null;
+    this.closePromotionModal();
+
+    if (this.mode === "online" && this.online.connected) {
+      this.onlineClient.send({ type: "new_game" });
+      this.setOnlineStatus(`Requested new game in room ${this.online.roomId}.`, false);
+      return;
+    }
+
     this.engine.reset();
     this.selected = null;
     this.legalMoves = [];
     this.lastMove = null;
-    this.pendingPromotion = null;
-    this.closePromotionModal();
+    this.online.pendingMove = false;
+
+    if (this.mode === "ai") {
+      this.configureAiSides();
+      this.orientation = this.humanColor;
+    } else if (this.mode === "local") {
+      this.orientation = "w";
+    } else if (this.mode === "online" && this.online.color) {
+      this.orientation = this.online.color;
+    }
+
     this.applyTimeControl();
     this.renderAll();
+    this.syncModeUI();
+    this.maybeQueueAIMove();
   }
 
   undoMove() {
-    this.pendingPromotion = null;
-    this.closePromotionModal();
-
-    const undoResult = this.engine.undo();
-    if (!undoResult.ok) {
+    if (this.mode === "online") {
       return;
     }
 
-    if (this.clockConfig.enabled) {
-      const snapshot = this.clockHistory.pop();
-      if (snapshot) {
-        this.clocks.w = snapshot.w;
-        this.clocks.b = snapshot.b;
+    this.cancelAITurn();
+    this.pendingPromotion = null;
+    this.closePromotionModal();
+
+    let undoSteps = 1;
+    if (this.mode === "ai" && this.engine.history.length >= 2) {
+      const lastMover = this.engine.history[this.engine.history.length - 1].mover;
+      if (lastMover === this.aiColor) {
+        undoSteps = 2;
       }
-      this.lastTick = performance.now();
     }
 
+    for (let i = 0; i < undoSteps; i += 1) {
+      const undoResult = this.engine.undo();
+      if (!undoResult.ok) {
+        break;
+      }
+
+      if (this.clockConfig.enabled) {
+        const snapshot = this.clockHistory.pop();
+        if (snapshot) {
+          this.clocks.w = snapshot.w;
+          this.clocks.b = snapshot.b;
+        }
+      }
+    }
+
+    this.lastTick = performance.now();
     this.selected = null;
     this.legalMoves = [];
+
     const lastHistoryEntry = this.engine.history[this.engine.history.length - 1];
     this.lastMove = lastHistoryEntry ? lastHistoryEntry.move : null;
 
     this.renderAll();
   }
 
+  cancelAITurn() {
+    if (this.aiTimer) {
+      window.clearTimeout(this.aiTimer);
+      this.aiTimer = null;
+    }
+    this.aiThinking = false;
+  }
+
+  maybeQueueAIMove() {
+    if (this.mode !== "ai") {
+      return;
+    }
+
+    if (this.engine.gameOver || this.pendingPromotion || this.aiThinking) {
+      return;
+    }
+
+    if (this.engine.turn !== this.aiColor) {
+      return;
+    }
+
+    this.aiThinking = true;
+    this.renderStatus();
+
+    const delay = 300 + Math.random() * 420;
+
+    this.aiTimer = window.setTimeout(() => {
+      this.aiTimer = null;
+
+      if (this.mode !== "ai" || this.engine.gameOver || this.engine.turn !== this.aiColor) {
+        this.aiThinking = false;
+        this.renderStatus();
+        return;
+      }
+
+      const move = this.ai.chooseMove(
+        this.engine,
+        this.aiDifficultySelect.value,
+        this.aiColor,
+      );
+
+      this.aiThinking = false;
+
+      if (!move) {
+        this.renderAll();
+        return;
+      }
+
+      this.executeMove(
+        move.fromX,
+        move.fromY,
+        move.toX,
+        move.toY,
+        move.promotionType || null,
+      );
+    }, delay);
+  }
+
+  canCurrentUserMove() {
+    if (this.engine.gameOver || this.pendingPromotion || this.aiThinking || this.online.pendingMove) {
+      return false;
+    }
+
+    if (this.mode === "local") {
+      return true;
+    }
+
+    if (this.mode === "ai") {
+      return this.engine.turn === this.humanColor;
+    }
+
+    if (this.mode === "online") {
+      return (
+        this.online.connected &&
+        this.online.role === "player" &&
+        this.online.color === this.engine.turn
+      );
+    }
+
+    return false;
+  }
+
   onSquareClick(x, y) {
-    if (this.pendingPromotion || this.engine.gameOver) {
+    if (!this.canCurrentUserMove()) {
       return;
     }
 
@@ -1116,6 +809,7 @@ class ChessApp {
 
     this.selected = { x, y };
     this.legalMoves = legalMoves;
+    this.renderBoard();
   }
 
   clearSelection() {
@@ -1171,6 +865,10 @@ class ChessApp {
   }
 
   executeMove(fromX, fromY, toX, toY, promotionType = null) {
+    if (this.mode === "online") {
+      return this.submitOnlineMove(fromX, fromY, toX, toY, promotionType);
+    }
+
     let clockSnapshot = null;
     if (this.clockConfig.enabled) {
       this.consumeClockElapsed();
@@ -1209,6 +907,62 @@ class ChessApp {
     this.lastMove = result.move.move;
 
     this.renderAll();
+
+    if (this.mode === "ai") {
+      this.maybeQueueAIMove();
+    }
+
+    return true;
+  }
+
+  submitOnlineMove(fromX, fromY, toX, toY, promotionType = null) {
+    if (!this.online.connected || this.online.role !== "player") {
+      return false;
+    }
+
+    if (this.online.color !== this.engine.turn) {
+      return false;
+    }
+
+    const legalMoves = this.engine.getLegalMovesForPiece(fromX, fromY, this.engine.turn);
+    const candidates = legalMoves.filter((move) => move.toX === toX && move.toY === toY);
+
+    if (!candidates.length) {
+      return false;
+    }
+
+    const needsPromotion = candidates.some((move) => Boolean(move.promotionType));
+    if (needsPromotion && !promotionType) {
+      this.pendingPromotion = { fromX, fromY, toX, toY };
+      this.openPromotionModal();
+      return false;
+    }
+
+    if (promotionType) {
+      const hasMatch = candidates.some((move) => move.promotionType === promotionType);
+      if (!hasMatch) {
+        return false;
+      }
+    }
+
+    this.onlineClient.send({
+      type: "move",
+      move: {
+        fromX,
+        fromY,
+        toX,
+        toY,
+        promotionType,
+      },
+    });
+
+    this.online.pendingMove = true;
+    this.pendingPromotion = null;
+    this.closePromotionModal();
+    this.clearSelection();
+    this.setOnlineStatus("Move sent. Waiting for server...", false);
+    this.renderBoard();
+
     return true;
   }
 
@@ -1252,6 +1006,8 @@ class ChessApp {
       ? this.engine.turn
       : null;
     const checkedKing = checkedColor ? this.engine.findKing(checkedColor) : null;
+
+    this.boardElement.classList.toggle("locked", !this.canCurrentUserMove());
 
     for (const square of this.squareElements) {
       const displayX = Number(square.dataset.displayX);
@@ -1316,26 +1072,69 @@ class ChessApp {
     }
   }
 
+  formatGameResult() {
+    if (!this.engine.gameOver || !this.engine.result) {
+      return null;
+    }
+
+    const { type } = this.engine.result;
+
+    if (type === "checkmate") {
+      const winnerName = this.engine.result.winner === "w" ? "White" : "Black";
+      return `${winnerName} wins by checkmate.`;
+    }
+
+    if (type === "timeout") {
+      const winnerName = this.engine.result.winner === "w" ? "White" : "Black";
+      return `${winnerName} wins on time.`;
+    }
+
+    if (type === "resign") {
+      const winnerName = this.engine.result.winner === "w" ? "White" : "Black";
+      return `${winnerName} wins by resignation.`;
+    }
+
+    if (type === "draw") {
+      return `Draw by ${this.engine.result.reason}.`;
+    }
+
+    return null;
+  }
+
   formatStatus() {
-    if (this.engine.gameOver && this.engine.result) {
-      const { type } = this.engine.result;
+    const resultText = this.formatGameResult();
+    if (resultText) {
+      return resultText;
+    }
 
-      if (type === "checkmate") {
-        const winnerName = this.engine.result.winner === "w" ? "White" : "Black";
-        return `${winnerName} wins by checkmate.`;
-      }
-
-      if (type === "timeout") {
-        const winnerName = this.engine.result.winner === "w" ? "White" : "Black";
-        return `${winnerName} wins on time.`;
-      }
-
-      if (type === "draw") {
-        return `Draw by ${this.engine.result.reason}.`;
-      }
+    if (this.mode === "ai" && this.aiThinking) {
+      return "Computer is thinking...";
     }
 
     const side = this.engine.turn === "w" ? "White" : "Black";
+
+    if (this.mode === "online") {
+      if (!this.online.connected) {
+        return "Online mode: connect to a room.";
+      }
+
+      if (this.online.role === "spectator") {
+        return `Spectating room ${this.online.roomId}. ${side} to move.`;
+      }
+
+      if (this.online.color === this.engine.turn) {
+        if (this.engine.isKingInCheck(this.engine.turn)) {
+          return `Your move (${side}). Check.`;
+        }
+        return `Your move (${side}).`;
+      }
+
+      if (this.engine.isKingInCheck(this.engine.turn)) {
+        return `${side} to move. Opponent in check.`;
+      }
+      return `Waiting for opponent. ${side} to move.`;
+    }
+
     if (this.engine.isKingInCheck(this.engine.turn)) {
       return `${side} to move. Check.`;
     }
@@ -1354,7 +1153,21 @@ class ChessApp {
       .join("")
       .trim() || "-";
 
-    this.metaLine.textContent = `Move ${this.engine.fullmoveNumber} · Halfmove ${this.engine.halfmoveClock} · Castling ${rights}`;
+    let modeLabel = "Local";
+    if (this.mode === "ai") {
+      modeLabel = `AI (${this.aiDifficultySelect.value})`;
+    }
+    if (this.mode === "online") {
+      modeLabel = this.online.connected
+        ? `Online ${this.online.roomId} (${this.online.role === "player"
+          ? this.online.color === "w"
+            ? "White"
+            : "Black"
+          : "Spectator"})`
+        : "Online (offline)";
+    }
+
+    this.metaLine.textContent = `Move ${this.engine.fullmoveNumber} · Halfmove ${this.engine.halfmoveClock} · Castling ${rights} · ${modeLabel}`;
   }
 
   renderHistory() {
@@ -1467,6 +1280,169 @@ class ChessApp {
     this.renderHistory();
     this.renderCaptures();
     this.renderClocks();
+    this.syncModeUI();
+  }
+
+  setOnlineStatus(message, isError) {
+    this.onlineStatusLine.textContent = message;
+    this.onlineStatusLine.classList.toggle("error", Boolean(isError));
+  }
+
+  describeOnlinePresence(players) {
+    const white = players && players.w ? "White: connected" : "White: open";
+    const black = players && players.b ? "Black: connected" : "Black: open";
+    return `${white} · ${black}`;
+  }
+
+  connectOnline() {
+    if (this.mode !== "online" || this.online.connected || this.online.joining) {
+      return;
+    }
+
+    let roomId = sanitizeRoomCode(this.onlineRoomInput.value);
+    if (!roomId) {
+      roomId = randomRoomCode();
+      this.onlineRoomInput.value = roomId;
+    }
+
+    const preferredColor = this.onlineColorSelect.value;
+
+    this.online.joining = true;
+    this.setOnlineStatus(`Connecting to ${roomId}...`, false);
+    this.syncModeUI();
+
+    this.onlineClient.connect(roomId, preferredColor);
+  }
+
+  disconnectOnline() {
+    if (!this.online.connected && !this.online.joining) {
+      return;
+    }
+
+    this.onlineClient.disconnect();
+  }
+
+  getLastMoveFromHistory() {
+    const entry = this.engine.history[this.engine.history.length - 1];
+    return entry ? entry.move : null;
+  }
+
+  handleOnlineEvent(event) {
+    if (event.type === "socket_open") {
+      this.setOnlineStatus("Connected. Joining room...", false);
+      return;
+    }
+
+    if (event.type === "socket_error") {
+      this.setOnlineStatus("Socket error. Check server availability.", true);
+      return;
+    }
+
+    if (event.type === "socket_close") {
+      const wasOnline = this.online.connected || this.online.joining;
+
+      this.online.joining = false;
+      this.online.connected = false;
+      this.online.pendingMove = false;
+      this.online.roomId = "";
+      this.online.role = "offline";
+      this.online.color = null;
+      this.online.players = { w: false, b: false };
+
+      if (this.mode === "online") {
+        this.setOnlineStatus(wasOnline ? "Disconnected." : "Not connected.", false);
+        this.engine.reset();
+        this.lastMove = null;
+        this.clearSelection();
+        this.applyTimeControl();
+        this.renderAll();
+      } else {
+        this.syncModeUI();
+      }
+
+      return;
+    }
+
+    if (event.type === "joined") {
+      this.online.joining = false;
+      this.online.connected = true;
+      this.online.roomId = event.roomId;
+      this.online.role = event.role;
+      this.online.color = event.color || null;
+      this.online.pendingMove = false;
+      this.online.players = event.players || { w: false, b: false };
+
+      this.engine.loadSerializableState(event.state);
+      this.lastMove = this.getLastMoveFromHistory();
+      this.clearSelection();
+      this.pendingPromotion = null;
+      this.closePromotionModal();
+
+      if (this.online.role === "player" && this.online.color) {
+        this.orientation = this.online.color;
+      }
+
+      this.applyTimeControl();
+      this.renderAll();
+
+      const presence = this.describeOnlinePresence(this.online.players);
+      if (this.online.role === "player") {
+        const colorName = this.online.color === "w" ? "White" : "Black";
+        this.setOnlineStatus(
+          `Joined ${event.roomId} as ${colorName}. ${presence}`,
+          false,
+        );
+      } else {
+        this.setOnlineStatus(`Joined ${event.roomId} as spectator. ${presence}`, false);
+      }
+
+      return;
+    }
+
+    if (event.type === "state") {
+      if (!this.online.connected) {
+        return;
+      }
+
+      this.engine.loadSerializableState(event.state);
+      this.lastMove = event.lastMove || this.getLastMoveFromHistory();
+      this.online.pendingMove = false;
+      this.clearSelection();
+      this.pendingPromotion = null;
+      this.closePromotionModal();
+
+      if (event.players) {
+        this.online.players = event.players;
+      }
+
+      this.renderAll();
+
+      if (event.info) {
+        this.setOnlineStatus(event.info, false);
+      }
+
+      return;
+    }
+
+    if (event.type === "presence") {
+      this.online.players = event.players || this.online.players;
+      if (this.online.connected) {
+        this.setOnlineStatus(this.describeOnlinePresence(this.online.players), false);
+      }
+      this.syncModeUI();
+      return;
+    }
+
+    if (event.type === "error") {
+      this.online.pendingMove = false;
+      this.setOnlineStatus(event.message || "Server error.", true);
+      this.syncModeUI();
+      return;
+    }
+
+    if (event.type === "info") {
+      this.setOnlineStatus(event.message || "", false);
+    }
   }
 }
 

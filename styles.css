@@ -120,6 +120,14 @@ body {
   grid-template-rows: repeat(8, minmax(0, 1fr));
 }
 
+.board.locked {
+  opacity: 0.88;
+}
+
+.board.locked .square {
+  cursor: not-allowed;
+}
+
 .square {
   position: relative;
   border: none;
@@ -307,6 +315,7 @@ body {
 }
 
 .controls-card select,
+.controls-card input,
 .controls-card button {
   border-radius: 10px;
   border: 1px solid rgba(18, 39, 44, 0.22);
@@ -320,10 +329,37 @@ body {
   font-weight: 600;
 }
 
+.controls-card input {
+  padding: 0.54rem 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.sub-controls {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.52rem;
+  border-radius: 10px;
+  border: 1px solid rgba(18, 39, 44, 0.1);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.sub-controls.hidden {
+  display: none;
+}
+
+.sub-controls.disabled {
+  opacity: 0.6;
+}
+
 .button-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.45rem;
+}
+
+.button-row.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .controls-card button {
@@ -340,6 +376,17 @@ body {
 
 .controls-card button:active {
   transform: translateY(0);
+}
+
+.inline-status {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #1f4c5a;
+  min-height: 1.25rem;
+}
+
+.inline-status.error {
+  color: #a0162e;
 }
 
 .captures-card h2,

@@ -1,57 +1,70 @@
 # Regal Chess
 
-Regal Chess is a fully featured, browser-based chess game with a premium visual style and complete move legality.
+Regal Chess is a full-featured chess game with a polished browser UI, built-in computer opponent, and online multiplayer rooms over WebSockets.
 
-## What You Get
+## Features
 
-- Full standard chess rules:
-  - Legal move validation for all pieces
-  - Check, checkmate, and stalemate
-  - Castling (both sides)
-  - En passant
-  - Promotion (choose queen, rook, bishop, or knight)
-  - Draw detection via threefold repetition, 50-move rule, and insufficient material
-- Polished, responsive UI:
-  - Animated board with move highlighting
-  - In-check and last-move indicators
-  - Captured piece tracking with material advantage
-  - Move history notation
-  - Board flip control
-  - Undo support
-- Optional clock modes:
-  - Untimed or preset time controls with increment
-  - Active player clock highlighting
-  - Timeout result handling
+- Complete chess rules and legality:
+  - All standard pieces and legal move generation
+  - Check, checkmate, stalemate
+  - Castling, en passant, and promotion
+  - Draw detection (threefold repetition, 50-move rule, insufficient material)
+- Premium board interface:
+  - Responsive animated board
+  - Legal move and capture highlights
+  - Last move and in-check indicators
+  - Move history and captured pieces with material edge
+  - Board flip and undo controls
+- Play modes:
+  - Local two-player (same device)
+  - Vs Computer (minimax AI, Easy/Medium/Hard)
+  - Online multiplayer rooms (player or spectator)
+- Time controls:
+  - Untimed, 3|2, 5|0, 10|5, 15|10
+  - Clock mode is disabled in online multiplayer (server-authoritative state)
 
 ## Project Structure
 
-- `index.html` - app shell and UI structure
-- `styles.css` - visual design, layout, and animations
-- `app.js` - chess rules engine + UI behavior
+- `index.html` - app layout and controls
+- `styles.css` - visual design and responsive styling
+- `engine-core.js` - shared chess engine (used by browser + server)
+- `app.js` - frontend game controller (UI, AI, online client)
+- `server.js` - static + WebSocket server for online multiplayer
+- `package.json` - Node scripts and dependencies
 
-## Run Locally
+## Quick Start
 
-1. Open the project folder.
-2. Start a local static server (recommended):
+1. Install dependencies:
    ```sh
-   python3 -m http.server 8000
+   npm install
    ```
-3. Visit:
-   [http://localhost:8000](http://localhost:8000)
+2. Start the server:
+   ```sh
+   npm start
+   ```
+3. Open:
+   [http://localhost:3000](http://localhost:3000)
 
-You can also open `index.html` directly in a browser, but a local server is more reliable for future expansion.
+## Using AI Mode
 
-## Controls
+1. Set `Game Mode` to `Vs Computer`.
+2. Pick `AI Difficulty` and `Play As` color.
+3. Press `New Game`.
 
-- Click a piece to see legal moves.
-- Click a highlighted square to move.
-- Use:
-  - `New Game` to reset
-  - `Undo` to step back one move
-  - `Flip Board` to swap perspective
-  - `Time Control` to switch clock mode
+## Using Online Multiplayer
 
-## Notes
+1. Set `Game Mode` to `Online Multiplayer`.
+2. Enter a `Room Code` (or leave empty to auto-generate one).
+3. Choose `Preferred Color` (or auto assign).
+4. Press `Connect`.
+5. Share the same room code with another player connected to the same server.
 
-- This version is optimized for local two-player play.
-- No external backend or database is required.
+Notes:
+- First two clients become White and Black players.
+- Additional clients join as spectators.
+- `Request New Game` resets board state for everyone in the room.
+
+## Development Notes
+
+- The server validates online moves using the same engine as the frontend.
+- Undo is intentionally disabled in online mode to keep room state consistent.

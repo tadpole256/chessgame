@@ -22,7 +22,7 @@
         <h1>Regal Chess</h1>
         <p>
           Full chess rules with castling, en passant, promotion, checkmate, stalemate,
-          repetition, and 50-move draw detection.
+          repetition, and 50-move draw detection. Includes computer AI and online rooms.
         </p>
       </header>
 
@@ -51,14 +51,58 @@
           </section>
 
           <section class="controls-card">
-            <label for="time-control">Time Control</label>
-            <select id="time-control">
-              <option value="untimed">Untimed</option>
-              <option value="180+2">3 | 2</option>
-              <option value="300+0" selected>5 | 0</option>
-              <option value="600+5">10 | 5</option>
-              <option value="900+10">15 | 10</option>
+            <label for="game-mode">Game Mode</label>
+            <select id="game-mode">
+              <option value="local" selected>Local 2 Player</option>
+              <option value="ai">Vs Computer</option>
+              <option value="online">Online Multiplayer</option>
             </select>
+
+            <div id="time-control-wrap" class="sub-controls">
+              <label for="time-control">Time Control</label>
+              <select id="time-control">
+                <option value="untimed">Untimed</option>
+                <option value="180+2">3 | 2</option>
+                <option value="300+0" selected>5 | 0</option>
+                <option value="600+5">10 | 5</option>
+                <option value="900+10">15 | 10</option>
+              </select>
+            </div>
+
+            <div id="ai-controls" class="sub-controls hidden">
+              <label for="ai-difficulty">AI Difficulty</label>
+              <select id="ai-difficulty">
+                <option value="easy">Easy</option>
+                <option value="medium" selected>Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+
+              <label for="human-color">Play As</label>
+              <select id="human-color">
+                <option value="w" selected>White</option>
+                <option value="b">Black</option>
+                <option value="random">Random</option>
+              </select>
+            </div>
+
+            <div id="online-controls" class="sub-controls hidden">
+              <label for="online-room">Room Code</label>
+              <input id="online-room" type="text" placeholder="e.g. CHESS42" maxlength="8" />
+
+              <label for="online-color">Preferred Color</label>
+              <select id="online-color">
+                <option value="auto" selected>Auto Assign</option>
+                <option value="w">White</option>
+                <option value="b">Black</option>
+              </select>
+
+              <div class="button-row two">
+                <button id="online-connect" type="button">Connect</button>
+                <button id="online-disconnect" type="button">Leave</button>
+              </div>
+
+              <p id="online-status" class="inline-status">Not connected.</p>
+            </div>
 
             <div class="button-row">
               <button id="new-game" type="button">New Game</button>
@@ -87,7 +131,13 @@
       </section>
     </main>
 
-    <div id="promotion-modal" class="promotion-modal hidden" role="dialog" aria-modal="true" aria-label="Choose promotion piece">
+    <div
+      id="promotion-modal"
+      class="promotion-modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Choose promotion piece"
+    >
       <div class="promotion-content">
         <h2>Choose Promotion</h2>
         <div class="promotion-options">
@@ -99,6 +149,7 @@
       </div>
     </div>
 
+    <script src="engine-core.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
