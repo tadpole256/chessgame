@@ -637,8 +637,8 @@ class ChessApp {
       this.orientation = this.humanColor;
     } else if (this.mode === "local") {
       this.orientation = "w";
-    } else if (this.mode === "online" && this.online.color) {
-      this.orientation = this.online.color;
+    } else if (this.mode === "online") {
+      this.orientation = this.online.color || "w";
     }
 
     this.applyTimeControl();

@@ -378,6 +378,13 @@ body {
   transform: translateY(0);
 }
 
+.controls-card button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 .inline-status {
   margin: 0;
   font-size: 0.82rem;
