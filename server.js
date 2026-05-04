@@ -62,6 +62,7 @@ function createRoom(roomId) {
     engine: new ChessEngine(),
     players: { w: null, b: null },
     spectators: new Set(),
+    drawOfferedBy: null,
   };
 }
 
@@ -341,6 +342,61 @@ function handleResign(socket) {
   });
 }
 
+function handleDrawOffer(socket) {
+  if (socket.role !== "player") {
+    send(socket, { type: "error", message: "Only players can offer draws." });
+    return;
+  }
+  if (!socket.roomId || !rooms.has(socket.roomId)) {
+    send(socket, { type: "error", message: "You are not in a room." });
+    return;
+  }
+  const room = rooms.get(socket.roomId);
+  if (room.engine.gameOver) return;
+  if (room.drawOfferedBy === socket.color) {
+    send(socket, { type: "info", message: "You already offered a draw." });
+    return;
+  }
+  room.drawOfferedBy = socket.color;
+  const opponent = room.players[socket.color === "w" ? "b" : "w"];
+  if (opponent) {
+    send(opponent, { type: "draw_offer", from: socket.color });
+  }
+  send(socket, { type: "info", message: "Draw offer sent." });
+}
+
+function handleDrawAccept(socket) {
+  if (socket.role !== "player") return;
+  if (!socket.roomId || !rooms.has(socket.roomId)) return;
+  const room = rooms.get(socket.roomId);
+  const opponent = socket.color === "w" ? "b" : "w";
+  if (room.drawOfferedBy !== opponent) {
+    send(socket, { type: "error", message: "No draw offer to accept." });
+    return;
+  }
+  if (room.engine.gameOver) return;
+  room.drawOfferedBy = null;
+  room.engine.setResult({ type: "draw", reason: "Agreement" });
+  broadcast(room, {
+    type: "state",
+    state: room.engine.getSerializableState(),
+    players: serializePlayers(room),
+    info: "Draw by agreement.",
+  });
+}
+
+function handleDrawDecline(socket) {
+  if (socket.role !== "player") return;
+  if (!socket.roomId || !rooms.has(socket.roomId)) return;
+  const room = rooms.get(socket.roomId);
+  room.drawOfferedBy = null;
+  const opponent = room.players[socket.color === "w" ? "b" : "w"];
+  if (opponent) {
+    send(opponent, { type: "draw_declined" });
+  }
+  send(socket, { type: "info", message: "Draw offer declined." });
+}
+
 function handleSocketMessage(socket, message) {
   let payload;
   try {
@@ -372,6 +428,21 @@ function handleSocketMessage(socket, message) {
 
   if (payload.type === "resign") {
     handleResign(socket);
+    return;
+  }
+
+  if (payload.type === "draw_offer") {
+    handleDrawOffer(socket);
+    return;
+  }
+
+  if (payload.type === "draw_accept") {
+    handleDrawAccept(socket);
+    return;
+  }
+
+  if (payload.type === "draw_decline") {
+    handleDrawDecline(socket);
     return;
   }
 

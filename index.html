@@ -18,12 +18,12 @@
 
     <main class="app-shell">
       <header class="hero">
-        <p class="eyebrow">Classic Rules. Modern Presentation.</p>
-        <h1>Regal Chess</h1>
-        <p>
-          Full chess rules with castling, en passant, promotion, checkmate, stalemate,
-          repetition, and 50-move draw detection. Includes computer AI and online rooms.
-        </p>
+        <div class="hero-text">
+          <p class="eyebrow">Classic Rules. Modern Presentation.</p>
+          <h1>Regal Chess</h1>
+          <p id="opening-name" class="opening-name"></p>
+        </div>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode">☽</button>
       </header>
 
       <section class="game-layout">
@@ -32,9 +32,26 @@
             <div id="board" class="board" role="grid" aria-label="Chess board"></div>
           </div>
 
+          <div id="browse-bar" class="browse-bar hidden" role="toolbar" aria-label="History navigation">
+            <span class="browse-label">History</span>
+            <button id="browse-first" type="button" title="First move">⏮</button>
+            <button id="browse-prev"  type="button" title="Previous move">◀</button>
+            <span id="browse-counter" class="browse-counter">0 / 0</span>
+            <button id="browse-next"  type="button" title="Next move">▶</button>
+            <button id="browse-last"  type="button" title="Last move">⏭</button>
+            <button id="browse-exit"  type="button" class="browse-exit">Return to game</button>
+          </div>
+
           <div class="status-card">
             <p id="status-line" class="status-line">White to move.</p>
-            <p id="meta-line" class="meta-line">Move 1</p>
+            <p id="meta-line"   class="meta-line">Move 1</p>
+          </div>
+
+          <div class="export-card">
+            <div class="button-row two">
+              <button id="copy-fen" type="button">Copy FEN</button>
+              <button id="copy-pgn" type="button">Copy PGN</button>
+            </div>
           </div>
         </section>
 
@@ -97,17 +114,31 @@
               </select>
 
               <div class="button-row two">
-                <button id="online-connect" type="button">Connect</button>
+                <button id="online-connect"    type="button">Connect</button>
                 <button id="online-disconnect" type="button">Leave</button>
               </div>
 
+              <button id="copy-room-link" type="button" class="full-width-btn">Copy Room Link</button>
+
               <p id="online-status" class="inline-status">Not connected.</p>
+
+              <div id="draw-offer-ui" class="draw-offer-ui hidden">
+                <p class="draw-offer-msg">Opponent offers a draw</p>
+                <div class="button-row two">
+                  <button id="draw-accept"  type="button">Accept</button>
+                  <button id="draw-decline" type="button">Decline</button>
+                </div>
+              </div>
             </div>
 
             <div class="button-row">
               <button id="new-game" type="button">New Game</button>
-              <button id="undo" type="button">Undo</button>
-              <button id="flip" type="button">Flip Board</button>
+              <button id="undo"     type="button">Undo</button>
+              <button id="flip"     type="button">Flip Board</button>
+            </div>
+            <div class="button-row two">
+              <button id="resign"     type="button">Resign</button>
+              <button id="offer-draw" type="button">Offer Draw</button>
             </div>
           </section>
 
@@ -131,6 +162,7 @@
       </section>
     </main>
 
+    <!-- Promotion Modal -->
     <div
       id="promotion-modal"
       class="promotion-modal hidden"
@@ -145,6 +177,25 @@
           <button type="button" data-piece="r"></button>
           <button type="button" data-piece="b"></button>
           <button type="button" data-piece="n"></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div
+      id="game-over-modal"
+      class="game-over-modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Game over"
+    >
+      <div class="game-over-content">
+        <div id="game-over-icon" class="game-over-icon">♔</div>
+        <h2 id="game-over-title" class="game-over-title">Game Over</h2>
+        <p  id="game-over-sub"   class="game-over-sub"></p>
+        <div class="button-row two">
+          <button id="game-over-new"   type="button">New Game</button>
+          <button id="game-over-close" type="button">Close</button>
         </div>
       </div>
     </div>

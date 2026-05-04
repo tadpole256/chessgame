@@ -960,6 +960,65 @@ class ChessEngine {
     this.result = { ...result };
   }
 
+  getResultString() {
+    if (!this.gameOver || !this.result) return "*";
+    const { type, winner } = this.result;
+    if (type === "checkmate" || type === "timeout" || type === "resign") {
+      return winner === "w" ? "1-0" : "0-1";
+    }
+    return "1/2-1/2";
+  }
+
+  getFEN() {
+    const rows = [];
+    for (let y = 0; y < 8; y += 1) {
+      let row = "";
+      let empty = 0;
+      for (let x = 0; x < 8; x += 1) {
+        const piece = this.board[y][x];
+        if (!piece) {
+          empty += 1;
+        } else {
+          if (empty > 0) { row += empty; empty = 0; }
+          row += piece.color === "w" ? piece.type.toUpperCase() : piece.type;
+        }
+      }
+      if (empty > 0) row += empty;
+      rows.push(row);
+    }
+
+    const castling = [
+      this.castlingRights.w.k ? "K" : "",
+      this.castlingRights.w.q ? "Q" : "",
+      this.castlingRights.b.k ? "k" : "",
+      this.castlingRights.b.q ? "q" : "",
+    ].join("") || "-";
+
+    const ep = this.enPassant
+      ? coordToAlgebraic(this.enPassant.x, this.enPassant.y)
+      : "-";
+
+    return `${rows.join("/")} ${this.turn} ${castling} ${ep} ${this.halfmoveClock} ${this.fullmoveNumber}`;
+  }
+
+  getPGN(headers = {}) {
+    const date = new Date().toISOString().split("T")[0].replace(/-/g, ".");
+    const result = this.getResultString();
+    const allHeaders = { Event: "Regal Chess", Date: date, White: "?", Black: "?", Result: result, ...headers };
+
+    const headerStr = Object.entries(allHeaders)
+      .map(([k, v]) => `[${k} "${v}"]`)
+      .join("\n");
+
+    let moves = "";
+    for (let i = 0; i < this.history.length; i += 1) {
+      if (i % 2 === 0) moves += `${Math.floor(i / 2) + 1}. `;
+      moves += this.history[i].notation + " ";
+    }
+
+    return `${headerStr}\n\n${moves.trim()} ${result}`;
+  }
+
   undo() {
     if (!this.history.length) {
       return { ok: false };
