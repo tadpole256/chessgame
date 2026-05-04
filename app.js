@@ -457,12 +457,22 @@ class ChessApp {
     // Dark theme
     this._loadTheme();
 
-    // Auto-fill room code from URL ?room=
-    const urlRoom = new URLSearchParams(window.location.search).get("room");
-    if (urlRoom) {
-      this.onlineRoomInput.value = sanitizeRoomCode(urlRoom);
-      this.gameModeSelect.value = "online";
-      this.mode = "online";
+    // When opened directly as a file (no server), hide Online Multiplayer.
+    // Local 2-player and vs-computer work entirely in the browser.
+    this._serverless = window.location.protocol === "file:";
+    if (this._serverless) {
+      const onlineOption = this.gameModeSelect.querySelector('option[value="online"]');
+      if (onlineOption) onlineOption.remove();
+    }
+
+    // Auto-fill room code from URL ?room= (only relevant when served)
+    if (!this._serverless) {
+      const urlRoom = new URLSearchParams(window.location.search).get("room");
+      if (urlRoom) {
+        this.onlineRoomInput.value = sanitizeRoomCode(urlRoom);
+        this.gameModeSelect.value = "online";
+        this.mode = "online";
+      }
     }
 
     this.buildBoard();
